@@ -1,18 +1,10 @@
 {
-  "name": "Sample Plugin",
+  "name": "sample-plugin",
   "version": "1.0.0",
-  "description": "A sample plugin that demonstrates OmniFlow's plugin system",
-  "author": "OmniFlow Team",
+  "description": "Reference plugin demonstrating the application boot hook.",
+  "author": "RafsanJamilBhuiya",
   "enabled": true,
-  "dependencies": [],
   "hooks": [
-    {
-      "name": "app:boot",
-      "type": "action"
-    },
-    {
-      "name": "request:process",
-      "type": "filter"
-    }
+    { "name": "app:boot", "type": "action", "priority": 10 }
   ]
 }
