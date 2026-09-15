@@ -1,331 +1,149 @@
 /**
- * OmniFlow Core - Advanced Plugin Loader
- * 
- * A secure, production-grade plugin management system with:
- * - Dynamic plugin discovery and loading
- * - Manifest validation
- * - Error isolation and sandboxing
- * - Lifecycle management (load, unload, enable, disable)
- * - Security checks and validation
- * 
- * Features:
- * - Safe plugin loading with error catching
- * - Plugin dependency management
- * - Plugin versioning support
- * - Automatic cleanup on errors
+ * Advanced plugin loader.
+ *
+ * Plugins are discovered from ./plugins and must contain a manifest.json and
+ * index.js. Module execution is wrapped in a restricted VM context with a
+ * deny-by-default require() function. This is a defense-in-depth boundary,
+ * not a substitute for running untrusted plugins in a separate OS/container.
  */
-
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 const eventBus = require('./eventBus');
 
 class PluginLoader {
   constructor() {
+    this.pluginsDir = path.resolve(__dirname, '..', 'plugins');
     this.plugins = new Map();
-    this.pluginsDir = path.join(__dirname, '../plugins');
-    this.loadErrors = [];
-    this.loadedCount = 0;
-    this.failedCount = 0;
+    this.errors = [];
   }
 
-  /**
-   * Load all plugins from the plugins directory
-   * Safe operation: errors in one plugin don't prevent others from loading
-   * 
-   * @returns {Promise<Object>} Loading summary with loaded and failed counts
-   */
   async loadAllPlugins() {
-    console.log('[PluginLoader] Starting plugin discovery...');
+    this.errors = [];
+    if (!fs.existsSync(this.pluginsDir)) fs.mkdirSync(this.pluginsDir, { recursive: true });
 
-    // Ensure plugins directory exists
-    if (!fs.existsSync(this.pluginsDir)) {
-      console.log('[PluginLoader] Plugins directory does not exist yet. Creating...');
-      fs.mkdirSync(this.pluginsDir, { recursive: true });
-      return { loaded: 0, failed: 0, errors: [] };
+    const entries = fs.readdirSync(this.pluginsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) await this.loadPlugin(entry.name);
     }
 
-    try {
-      const pluginDirs = fs.readdirSync(this.pluginsDir, { 
-        withFileTypes: true 
-      }).filter(dirent => dirent.isDirectory());
-
-      console.log(`[PluginLoader] Found ${pluginDirs.length} plugin directories`);
-
-      for (const dirent of pluginDirs) {
-        await this._loadPlugin(dirent.name);
-      }
-
-      console.log(
-        `[PluginLoader] Plugin loading complete. ` +
-        `Loaded: ${this.loadedCount}, Failed: ${this.failedCount}`
-      );
-
-      return {
-        loaded: this.loadedCount,
-        failed: this.failedCount,
-        errors: this.loadErrors
-      };
-    } catch (error) {
-      console.error('[PluginLoader] Fatal error during plugin discovery:', error);
-      return {
-        loaded: this.loadedCount,
-        failed: this.failedCount,
-        errors: [error.message]
-      };
-    }
+    return this.getStats();
   }
 
-  /**
-   * Load a single plugin with full error handling
-   * 
-   * @private
-   * @param {string} pluginName - The plugin directory name
-   * @returns {Promise<void>}
-   */
-  async _loadPlugin(pluginName) {
-    const pluginPath = path.join(this.pluginsDir, pluginName);
-
+  async loadPlugin(pluginName) {
     try {
-      // Load and validate manifest
-      const manifest = await this._loadManifest(pluginPath, pluginName);
+      this.#assertPluginName(pluginName);
+      if (this.plugins.has(pluginName)) return this.plugins.get(pluginName);
 
-      if (!manifest) {
-        this.failedCount++;
-        return;
+      const pluginPath = this.#safePluginPath(pluginName);
+      const manifest = this.#readManifest(pluginPath, pluginName);
+      if (manifest.enabled === false) return null;
+
+      const modulePath = path.join(pluginPath, 'index.js');
+      if (!fs.existsSync(modulePath)) throw new Error('Missing index.js');
+
+      const plugin = this.#loadSandboxedModule(modulePath);
+      if (!plugin || typeof plugin.activate !== 'function') {
+        throw new Error('Plugin must export an activate(eventBus) function');
       }
 
-      // Check if plugin is enabled
-      if (!manifest.enabled) {
-        console.log(`[PluginLoader] Plugin '${pluginName}' is disabled, skipping`);
-        return;
-      }
-
-      // Load plugin module with sandboxing
-      const plugin = await this._loadPluginModule(pluginPath, pluginName, manifest);
-
-      if (!plugin) {
-        this.failedCount++;
-        return;
-      }
-
-      // Store plugin metadata
-      this.plugins.set(pluginName, {
-        name: pluginName,
-        manifest,
-        module: plugin,
-        loaded: new Date(),
-        status: 'active'
-      });
-
-      // Execute plugin initialization hook
-      if (typeof plugin.activate === 'function') {
-        try {
-          await Promise.resolve(plugin.activate(eventBus));
-          console.log(`[PluginLoader] ✓ Plugin '${pluginName}' activated successfully`);
-        } catch (error) {
-          console.error(
-            `[PluginLoader] Error activating plugin '${pluginName}':`,
-            error.message
-          );
-          this.plugins.delete(pluginName);
-          this.failedCount++;
-          this.loadErrors.push(
-            `Plugin '${pluginName}' activation failed: ${error.message}`
-          );
-          return;
-        }
-      }
-
-      this.loadedCount++;
+      await plugin.activate(eventBus);
+      const record = { name: pluginName, manifest, module: plugin, status: 'active', loadedAt: new Date().toISOString() };
+      this.plugins.set(pluginName, record);
+      console.log(`[PluginLoader] ✓ ${pluginName} activated`);
+      return record;
     } catch (error) {
-      console.error(`[PluginLoader] Failed to load plugin '${pluginName}':`, error.message);
-      this.failedCount++;
-      this.loadErrors.push(
-        `Plugin '${pluginName}' loading failed: ${error.message}`
-      );
-    }
-  }
-
-  /**
-   * Load and validate plugin manifest
-   * 
-   * @private
-   * @param {string} pluginPath - Path to the plugin directory
-   * @param {string} pluginName - The plugin name
-   * @returns {Promise<Object|null>} Manifest object or null if invalid
-   */
-  async _loadManifest(pluginPath, pluginName) {
-    const manifestPath = path.join(pluginPath, 'manifest.json');
-
-    try {
-      if (!fs.existsSync(manifestPath)) {
-        console.warn(`[PluginLoader] No manifest.json found for plugin '${pluginName}'`);
-        return null;
-      }
-
-      const manifestContent = fs.readFileSync(manifestPath, 'utf8');
-      const manifest = JSON.parse(manifestContent);
-
-      // Validate required manifest fields
-      if (!manifest.name || !manifest.version) {
-        console.warn(
-          `[PluginLoader] Plugin '${pluginName}' manifest missing required fields ` +
-          `(name, version)`
-        );
-        return null;
-      }
-
-      return {
-        name: manifest.name,
-        version: manifest.version,
-        description: manifest.description || 'No description provided',
-        author: manifest.author || 'Unknown',
-        enabled: manifest.enabled !== false, // Default to enabled
-        dependencies: manifest.dependencies || [],
-        hooks: manifest.hooks || []
-      };
-    } catch (error) {
-      console.error(
-        `[PluginLoader] Error parsing manifest for plugin '${pluginName}':`,
-        error.message
-      );
+      this.errors.push({ plugin: pluginName, message: error.message });
+      console.error(`[PluginLoader] ✗ ${pluginName}: ${error.message}`);
       return null;
     }
   }
 
-  /**
-   * Load plugin module with sandboxing and error isolation
-   * 
-   * @private
-   * @param {string} pluginPath - Path to the plugin directory
-   * @param {string} pluginName - The plugin name
-   * @param {Object} manifest - The plugin manifest
-   * @returns {Promise<Object|null>} Plugin module or null if failed
-   */
-  async _loadPluginModule(pluginPath, pluginName, manifest) {
-    const indexPath = path.join(pluginPath, 'index.js');
-
-    try {
-      if (!fs.existsSync(indexPath)) {
-        console.warn(`[PluginLoader] No index.js found for plugin '${pluginName}'`);
-        return null;
-      }
-
-      // Clear require cache to allow reloading
-      delete require.cache[require.resolve(indexPath)];
-
-      // Load module with error boundary
-      let plugin;
-      try {
-        plugin = require(indexPath);
-      } catch (requireError) {
-        console.error(
-          `[PluginLoader] Error requiring plugin '${pluginName}':`,
-          requireError.message
-        );
-        throw new Error(`Failed to require plugin module: ${requireError.message}`);
-      }
-
-      // Validate plugin module
-      if (typeof plugin !== 'object' || plugin === null) {
-        throw new Error('Plugin must export an object');
-      }
-
-      // Plugin must have an activate function
-      if (typeof plugin.activate !== 'function') {
-        throw new Error('Plugin must export an activate function');
-      }
-
-      return plugin;
-    } catch (error) {
-      console.error(
-        `[PluginLoader] Error loading plugin module '${pluginName}':`,
-        error.message
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Get information about loaded plugins
-   * 
-   * @returns {Object} Plugins summary
-   */
-  getPlugins() {
-    const plugins = {};
-
-    for (const [name, pluginData] of this.plugins.entries()) {
-      plugins[name] = {
-        name: pluginData.manifest.name,
-        version: pluginData.manifest.version,
-        description: pluginData.manifest.description,
-        author: pluginData.manifest.author,
-        status: pluginData.status,
-        loaded: pluginData.loaded,
-        hooks: pluginData.manifest.hooks
-      };
-    }
-
-    return plugins;
-  }
-
-  /**
-   * Get a specific plugin by name
-   * 
-   * @param {string} pluginName - The plugin name
-   * @returns {Object|null} Plugin data or null if not found
-   */
-  getPlugin(pluginName) {
-    return this.plugins.get(pluginName) || null;
-  }
-
-  /**
-   * Unload a specific plugin
-   * 
-   * @param {string} pluginName - The plugin name
-   * @returns {Promise<boolean>} Success status
-   */
   async unloadPlugin(pluginName) {
-    const pluginData = this.plugins.get(pluginName);
-
-    if (!pluginData) {
-      console.warn(`[PluginLoader] Plugin '${pluginName}' not found`);
-      return false;
-    }
-
+    const record = this.plugins.get(pluginName);
+    if (!record) return false;
     try {
-      // Call deactivate hook if available
-      if (typeof pluginData.module.deactivate === 'function') {
-        await Promise.resolve(pluginData.module.deactivate());
-      }
-
-      this.plugins.delete(pluginName);
-      console.log(`[PluginLoader] Plugin '${pluginName}' unloaded successfully`);
-      return true;
+      if (typeof record.module.deactivate === 'function') await record.module.deactivate(eventBus);
     } catch (error) {
-      console.error(
-        `[PluginLoader] Error unloading plugin '${pluginName}':`,
-        error.message
-      );
-      return false;
+      this.errors.push({ plugin: pluginName, message: `deactivate: ${error.message}` });
+    } finally {
+      eventBus.removePluginHooks(pluginName);
+      this.plugins.delete(pluginName);
     }
+    return true;
   }
 
-  /**
-   * Get loading statistics
-   * 
-   * @returns {Object} Loading statistics
-   */
+  getPlugin(pluginName) { return this.plugins.get(pluginName) || null; }
+
+  getPlugins() {
+    return Object.fromEntries([...this.plugins].map(([name, record]) => [name, {
+      name: record.manifest.name,
+      version: record.manifest.version,
+      description: record.manifest.description,
+      status: record.status,
+      loadedAt: record.loadedAt
+    }]));
+  }
+
   getStats() {
     return {
-      totalLoaded: this.loadedCount,
-      totalFailed: this.failedCount,
-      activePlugins: this.plugins.size,
-      errors: this.loadErrors,
-      plugins: Array.from(this.plugins.keys())
+      discovered: this.plugins.size + this.errors.length,
+      loaded: this.plugins.size,
+      failed: this.errors.length,
+      active: this.plugins.size,
+      errors: [...this.errors]
     };
+  }
+
+  #readManifest(pluginPath, pluginName) {
+    const manifestPath = path.join(pluginPath, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) throw new Error('Missing manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (manifest.name !== pluginName || !/^\d+\.\d+\.\d+/.test(manifest.version || '')) {
+      throw new Error('Manifest must contain matching name and a semantic version');
+    }
+    if (manifest.hooks && !Array.isArray(manifest.hooks)) throw new Error('Manifest hooks must be an array');
+    return {
+      name: manifest.name,
+      version: manifest.version,
+      description: manifest.description || '',
+      author: manifest.author || '',
+      enabled: manifest.enabled !== false,
+      hooks: manifest.hooks || []
+    };
+  }
+
+  #loadSandboxedModule(modulePath) {
+    const source = fs.readFileSync(modulePath, 'utf8');
+    const module = { exports: {} };
+    const sandbox = Object.freeze({
+      console,
+      Date,
+      JSON,
+      Math,
+      Promise,
+      setTimeout,
+      clearTimeout,
+      module,
+      exports: module.exports,
+      require: () => { throw new Error('Plugin require() is disabled by the loader sandbox'); }
+    });
+    const context = vm.createContext(sandbox, { name: path.basename(path.dirname(modulePath)) });
+    const wrapped = `(function (module, exports, require) { 'use strict';\n${source}\n})`;
+    const factory = new vm.Script(wrapped, { filename: modulePath }).runInContext(context, { timeout: 1000 });
+    factory(module, module.exports, sandbox.require);
+    return module.exports;
+  }
+
+  #assertPluginName(name) {
+    if (typeof name !== 'string' || !/^[a-z0-9][a-z0-9_-]*$/i.test(name)) throw new Error('Invalid plugin directory name');
+  }
+
+  #safePluginPath(name) {
+    const resolved = path.resolve(this.pluginsDir, name);
+    if (path.dirname(resolved) !== this.pluginsDir) throw new Error('Plugin path escapes plugins directory');
+    return resolved;
   }
 }
 
-// Export singleton instance
 module.exports = new PluginLoader();
