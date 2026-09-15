@@ -12,7 +12,8 @@ const database = require('./core/database');
 const pluginLoader = require('./core/loader');
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 10000);
+const HOST = '0.0.0.0';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 app.disable('x-powered-by');
@@ -43,24 +44,46 @@ eventBus.onError((error, context) => {
   });
 });
 
-app.get('/health', async (req, res) => {
-  const pluginStats = pluginLoader.getStats();
-  const dbConfigured = database.isConfigured();
-  const healthy = pluginStats.failed === 0 && dbConfigured;
-
-  res.status(healthy ? 200 : 503).json({
-    status: healthy ? 'healthy' : 'degraded',
+// Lightweight liveness probe: verifies only that the Node.js process is serving HTTP.
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: NODE_ENV,
+    environment: NODE_ENV
+  });
+});
+
+// Readiness probe: checks application dependencies without making /health dependency-bound.
+app.get('/ready', (req, res) => {
+  const pluginStats = pluginLoader.getStats();
+  const dbConfigured = database.isConfigured();
+  const ready = pluginStats.failed === 0 && dbConfigured;
+
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'ready' : 'not_ready',
+    timestamp: new Date().toISOString(),
     database: { configured: dbConfigured },
-    plugins: pluginStats,
-    eventBus: eventBus.getHooks()
+    plugins: pluginStats
   });
 });
 
 app.get('/status', (req, res) => {
-  res.json({ status: 'ok', service: 'my-auto-platform', version: '1.0.0' });
+  res.status(200).json({
+    status: 'ok',
+    service: 'my-auto-platform',
+    version: '1.0.0'
+  });
+});
+
+// Canonical API health route for the Vercel /api/* reverse proxy.
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    service: 'my-auto-platform',
+    proxy: true,
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.use((req, res) => {
@@ -86,8 +109,8 @@ async function startServer() {
     plugins: pluginResult
   });
 
-  server = app.listen(PORT, () => {
-    console.log(`[Server] my-auto-platform listening on :${PORT} (${NODE_ENV})`);
+  server = app.listen(PORT, HOST, () => {
+    console.log(`[Server] my-auto-platform listening on ${HOST}:${PORT} (${NODE_ENV})`);
   });
 }
 
