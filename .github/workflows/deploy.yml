@@ -1,0 +1,42 @@
+name: Node.js CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify backend and plugins
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20.x'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate package metadata
+        run: node -e "const p=require('./package.json'); if(p.name!=='my-auto-platform') process.exit(1); console.log(p.name+' '+p.version)"
+
+      - name: Syntax check core modules
+        run: |
+          node --check server.js
+          node --check core/eventBus.js
+          node --check core/database.js
+          node --check core/loader.js
+          node --check plugins/sample-plugin/index.js
+
+      - name: Load plugin system
+        run: node -e "require('dotenv').config(); const loader=require('./core/loader'); loader.loadAllPlugins().then(s=>{console.log(s); if(s.failed) process.exit(1);}).catch(e=>{console.error(e); process.exit(1);})"
