@@ -1,0 +1,18 @@
+{
+  "name": "Sample Plugin",
+  "version": "1.0.0",
+  "description": "A sample plugin that demonstrates OmniFlow's plugin system",
+  "author": "OmniFlow Team",
+  "enabled": true,
+  "dependencies": [],
+  "hooks": [
+    {
+      "name": "app:boot",
+      "type": "action"
+    },
+    {
+      "name": "request:process",
+      "type": "filter"
+    }
+  ]
+}
