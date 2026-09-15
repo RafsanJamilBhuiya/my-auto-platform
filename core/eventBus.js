@@ -1,287 +1,110 @@
 /**
- * OmniFlow Core - Event Bus System
- * 
- * A robust, production-grade event/hook system using Node.js EventEmitter.
- * Provides safe plugin registration with error handling and isolation.
- * 
- * Features:
- * - Action hooks: Plugins can register and execute sequential actions
- * - Filter hooks: Plugins can register and apply sequential filters to data
- * - Safe event listening: Error handling prevents plugin crashes from affecting core
- * - Event priorities: Support for hook priorities (higher = earlier execution)
+ * Core Event Bus
+ *
+ * A fault-tolerant EventEmitter-based action/filter system for plugins.
+ * Plugin failures are isolated and reported; they never propagate into the
+ * core application lifecycle.
  */
-
-const { EventEmitter } = require('events');
+const { EventEmitter } = require('node:events');
 
 class EventBus extends EventEmitter {
   constructor() {
     super();
+    this.setMaxListeners(100);
     this.actions = new Map();
     this.filters = new Map();
-    this.hookPriorities = new Map();
     this.errorHandlers = new Set();
-    
-    // Set max listeners to prevent memory leak warnings
-    this.setMaxListeners(100);
-    
-    // Configure error handling
-    this.on('error', this._handleError.bind(this));
   }
 
-  /**
-   * Register an action hook
-   * Actions are executed sequentially without modifying data
-   * 
-   * @param {string} hookName - The name of the hook
-   * @param {Function} callback - The callback function to execute
-   * @param {number} priority - Execution priority (default: 10, higher = earlier)
-   * @param {string} pluginName - The name of the plugin registering the hook
-   * @returns {Function} Unregister function
-   */
-  registerAction(hookName, callback, priority = 10, pluginName = 'unknown') {
-    if (typeof hookName !== 'string') {
-      throw new Error('Hook name must be a string');
-    }
-    if (typeof callback !== 'function') {
-      throw new Error('Callback must be a function');
-    }
-
-    const hookKey = `action:${hookName}`;
-    
-    if (!this.actions.has(hookKey)) {
-      this.actions.set(hookKey, []);
-      this.hookPriorities.set(hookKey, []);
-    }
-
-    const hookData = {
-      callback,
-      priority,
-      pluginName,
-      registered: new Date()
-    };
-
-    const hooks = this.actions.get(hookKey);
-    const priorities = this.hookPriorities.get(hookKey);
-    
-    hooks.push(hookData);
-    priorities.push(priority);
-
-    // Sort by priority (higher first)
-    const indices = hooks.map((_, i) => i);
-    indices.sort((a, b) => priorities[b] - priorities[a]);
-    
-    const sortedHooks = indices.map(i => hooks[i]);
-    const sortedPriorities = indices.map(i => priorities[i]);
-    
-    this.actions.set(hookKey, sortedHooks);
-    this.hookPriorities.set(hookKey, sortedPriorities);
-
-    // Return unregister function
-    return () => {
-      const index = this.actions.get(hookKey).indexOf(hookData);
-      if (index > -1) {
-        this.actions.get(hookKey).splice(index, 1);
-        this.hookPriorities.get(hookKey).splice(index, 1);
-      }
-    };
+  registerAction(name, handler, priority = 10, pluginName = 'unknown') {
+    this.#validate(name, handler, priority);
+    const entry = { handler, priority, pluginName };
+    const hooks = this.actions.get(name) || [];
+    hooks.push(entry);
+    hooks.sort((a, b) => b.priority - a.priority);
+    this.actions.set(name, hooks);
+    return () => this.#remove(this.actions, name, entry);
   }
 
-  /**
-   * Execute all registered actions for a hook
-   * Errors in one action don't prevent others from executing
-   * 
-   * @param {string} hookName - The name of the hook
-   * @param {...any} args - Arguments to pass to callbacks
-   * @returns {Promise<void>}
-   */
-  async executeAction(hookName, ...args) {
-    const hookKey = `action:${hookName}`;
-    const hooks = this.actions.get(hookKey) || [];
+  registerFilter(name, handler, priority = 10, pluginName = 'unknown') {
+    this.#validate(name, handler, priority);
+    const entry = { handler, priority, pluginName };
+    const hooks = this.filters.get(name) || [];
+    hooks.push(entry);
+    hooks.sort((a, b) => b.priority - a.priority);
+    this.filters.set(name, hooks);
+    return () => this.#remove(this.filters, name, entry);
+  }
 
-    for (const hookData of hooks) {
+  async executeAction(name, ...args) {
+    for (const entry of [...(this.actions.get(name) || [])]) {
       try {
-        await Promise.resolve(hookData.callback(...args));
+        await entry.handler(...args);
       } catch (error) {
-        this._emitError({
-          type: 'ACTION_ERROR',
-          hookName,
-          pluginName: hookData.pluginName,
-          error
-        });
+        this.#report(error, { type: 'ACTION_ERROR', name, pluginName: entry.pluginName });
       }
     }
   }
 
-  /**
-   * Register a filter hook
-   * Filters modify data and pass it through a chain of callbacks
-   * 
-   * @param {string} hookName - The name of the hook
-   * @param {Function} callback - The callback function (must return modified value)
-   * @param {number} priority - Execution priority (default: 10, higher = earlier)
-   * @param {string} pluginName - The name of the plugin registering the hook
-   * @returns {Function} Unregister function
-   */
-  registerFilter(hookName, callback, priority = 10, pluginName = 'unknown') {
-    if (typeof hookName !== 'string') {
-      throw new Error('Hook name must be a string');
-    }
-    if (typeof callback !== 'function') {
-      throw new Error('Callback must be a function');
-    }
-
-    const hookKey = `filter:${hookName}`;
-    
-    if (!this.filters.has(hookKey)) {
-      this.filters.set(hookKey, []);
-      this.hookPriorities.set(hookKey, []);
-    }
-
-    const hookData = {
-      callback,
-      priority,
-      pluginName,
-      registered: new Date()
-    };
-
-    const hooks = this.filters.get(hookKey);
-    const priorities = this.hookPriorities.get(hookKey);
-    
-    hooks.push(hookData);
-    priorities.push(priority);
-
-    // Sort by priority (higher first)
-    const indices = hooks.map((_, i) => i);
-    indices.sort((a, b) => priorities[b] - priorities[a]);
-    
-    const sortedHooks = indices.map(i => hooks[i]);
-    const sortedPriorities = indices.map(i => priorities[i]);
-    
-    this.filters.set(hookKey, sortedHooks);
-    this.hookPriorities.set(hookKey, sortedPriorities);
-
-    // Return unregister function
-    return () => {
-      const index = this.filters.get(hookKey).indexOf(hookData);
-      if (index > -1) {
-        this.filters.get(hookKey).splice(index, 1);
-        this.hookPriorities.get(hookKey).splice(index, 1);
-      }
-    };
-  }
-
-  /**
-   * Apply all registered filters to data
-   * Each filter receives the output of the previous filter
-   * 
-   * @param {string} hookName - The name of the hook
-   * @param {any} value - The initial value to filter
-   * @param {...any} args - Additional arguments to pass to callbacks
-   * @returns {Promise<any>} The filtered value
-   */
-  async applyFilter(hookName, value, ...args) {
-    const hookKey = `filter:${hookName}`;
-    const hooks = this.filters.get(hookKey) || [];
-
+  async applyFilter(name, value, ...args) {
     let result = value;
-
-    for (const hookData of hooks) {
+    for (const entry of [...(this.filters.get(name) || [])]) {
       try {
-        result = await Promise.resolve(hookData.callback(result, ...args));
+        result = await entry.handler(result, ...args);
       } catch (error) {
-        this._emitError({
-          type: 'FILTER_ERROR',
-          hookName,
-          pluginName: hookData.pluginName,
-          error
-        });
-        // Continue with previous value on error
+        this.#report(error, { type: 'FILTER_ERROR', name, pluginName: entry.pluginName });
       }
     }
-
     return result;
   }
 
-  /**
-   * Register an error handler
-   * @param {Function} handler - Function to handle errors
-   */
   onError(handler) {
-    if (typeof handler !== 'function') {
-      throw new Error('Error handler must be a function');
-    }
+    if (typeof handler !== 'function') throw new TypeError('Error handler must be a function');
     this.errorHandlers.add(handler);
+    return () => this.errorHandlers.delete(handler);
   }
 
-  /**
-   * Get all registered hooks for debugging
-   * @returns {Object} Object containing all registered hooks
-   */
-  getHooks() {
-    const hooks = {
-      actions: {},
-      filters: {}
-    };
-
-    for (const [key, values] of this.actions.entries()) {
-      hooks.actions[key] = values.map(h => ({
-        pluginName: h.pluginName,
-        priority: h.priority,
-        registered: h.registered
-      }));
-    }
-
-    for (const [key, values] of this.filters.entries()) {
-      hooks.filters[key] = values.map(h => ({
-        pluginName: h.pluginName,
-        priority: h.priority,
-        registered: h.registered
-      }));
-    }
-
-    return hooks;
-  }
-
-  /**
-   * Clear all hooks (use with caution)
-   */
-  clearAllHooks() {
-    this.actions.clear();
-    this.filters.clear();
-    this.hookPriorities.clear();
-  }
-
-  /**
-   * Internal: Handle errors safely
-   * @private
-   */
-  _emitError(errorData) {
-    const error = new Error(
-      `${errorData.type}: Hook '${errorData.hookName}' in plugin '${errorData.pluginName}': ${errorData.error.message}`
-    );
-    error.originalError = errorData.error;
-
-    for (const handler of this.errorHandlers) {
-      try {
-        handler(error, errorData);
-      } catch (e) {
-        console.error('Error in error handler:', e);
+  removePluginHooks(pluginName) {
+    for (const registry of [this.actions, this.filters]) {
+      for (const [name, hooks] of registry) {
+        const remaining = hooks.filter((entry) => entry.pluginName !== pluginName);
+        remaining.length ? registry.set(name, remaining) : registry.delete(name);
       }
     }
-
-    if (this.errorHandlers.size === 0) {
-      console.error('[EventBus Error]', error.message);
-    }
   }
 
-  /**
-   * Internal: Handle EventEmitter errors
-   * @private
-   */
-  _handleError(error) {
-    console.error('[EventBus Fatal Error]', error);
+  getHooks() {
+    const serialize = (registry) => Object.fromEntries(
+      [...registry].map(([name, hooks]) => [name, hooks.map(({ pluginName, priority }) => ({ pluginName, priority }))])
+    );
+    return { actions: serialize(this.actions), filters: serialize(this.filters) };
+  }
+
+  #validate(name, handler, priority) {
+    if (typeof name !== 'string' || !name.trim()) throw new TypeError('Hook name must be a non-empty string');
+    if (typeof handler !== 'function') throw new TypeError('Hook handler must be a function');
+    if (!Number.isFinite(priority)) throw new TypeError('Hook priority must be a finite number');
+  }
+
+  #remove(registry, name, entry) {
+    const hooks = registry.get(name);
+    if (!hooks) return;
+    const remaining = hooks.filter((candidate) => candidate !== entry);
+    remaining.length ? registry.set(name, remaining) : registry.delete(name);
+  }
+
+  #report(error, context) {
+    const payload = { ...context, error, timestamp: new Date().toISOString() };
+    if (!this.errorHandlers.size) {
+      console.error(`[EventBus] ${context.type} in ${context.pluginName}:`, error.message);
+      return;
+    }
+    for (const handler of this.errorHandlers) {
+      try { handler(error, payload); } catch (handlerError) {
+        console.error('[EventBus] Error handler failed:', handlerError.message);
+      }
+    }
   }
 }
 
-// Export singleton instance
 module.exports = new EventBus();
