@@ -1,0 +1,5 @@
+const express=require('express'); const fs=require('fs'); const path=require('path'); const os=require('os'); const {execFile}=require('child_process'); const {authRequired,adminRequired}=require('../middleware/auth');
+const router=express.Router(); const root=path.resolve(__dirname,'..'); const safeFiles=['package.json','server.js','README.md','public/dashboard.html','routes/auth.js','routes/admin.js','routes/integrations.js','routes/backup.js','middleware/auth.js'];
+router.get('/export',authRequired,adminRequired,(req,res)=>{ const out=path.join(os.tmpdir(),`my-auto-platform-${Date.now()}.tar.gz`); const args=['-czf',out,...safeFiles]; execFile('tar',args,{cwd:root},(err)=>{if(err)return res.status(500).json({ok:false,error:'Backup generation failed'}); res.download(out,'my-auto-platform-backup.tar.gz',()=>fs.rm(out,{force:true},()=>{}));}); });
+router.post('/restore',authRequired,adminRequired,(req,res)=>res.status(501).json({ok:false,error:'Restore requires an uploaded archive and explicit file validation; this endpoint is intentionally disabled until multipart upload validation is configured.'}));
+module.exports=router;
