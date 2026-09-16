@@ -1,11 +1,12 @@
 const express = require('express');
 const crypto = require('crypto');
-const { signToken } = require('../middleware/auth');
+const { signToken, authRequired } = require('../middleware/auth');
 const store = require('../core/store');
 const router = express.Router();
 function hash(password,salt=crypto.randomBytes(16).toString('hex')){return{salt,password_hash:crypto.scryptSync(password,salt,64).toString('hex')}}
 function safeUser(user){return{id:user.id,email:user.email,name:user.name,role:user.role,provider:user.provider||'local'}}
 function issue(res,user){const now=Math.floor(Date.now()/1000);const token=signToken({sub:user.id,email:user.email,name:user.name,role:user.role,iat:now,exp:now+86400});res.cookie('auth_token',token,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',maxAge:86400000,path:'/'})}
+router.get('/profile',authRequired,(req,res)=>res.json({ok:true,user:safeUser(req.user)}));
 router.get('/google/config',(req,res)=>{res.set('Cache-Control','no-store').json({ok:true,clientId:process.env.GOOGLE_CLIENT_ID||null,enabled:Boolean(process.env.GOOGLE_CLIENT_ID)})});
 router.post('/register',express.json(),async(req,res)=>{try{const email=String(req.body.email||'').trim().toLowerCase(),password=String(req.body.password||''),name=String(req.body.name||'').trim()||email.split('@')[0];if(!/^\S+@\S+\.\S+$/.test(email)||password.length<10)return res.status(400).json({ok:false,error:'Valid email and password of at least 10 characters are required'});if(await store.findUserByEmail(email))return res.status(409).json({ok:false,error:'Account already exists'});const user={id:crypto.randomUUID(),email,name,role:(await store.countUsers())===0?'admin':'user',provider:'local',...hash(password)};const created=await store.createUser(user);issue(res,created);res.status(201).json({ok:true,user:safeUser(created)})}catch(error){console.error('[Auth] register:',error);res.status(500).json({ok:false,error:'Registration failed'})}});
 router.post('/login',express.json(),async(req,res)=>{try{const email=String(req.body.email||'').trim().toLowerCase(),password=String(req.body.password||''),user=await store.findUserByEmail(email);if(!user||!user.password_hash||!user.salt)return res.status(401).json({ok:false,error:'Invalid credentials'});const candidate=Buffer.from(crypto.scryptSync(password,user.salt,64).toString('hex'),'hex'),expected=Buffer.from(user.password_hash,'hex');if(candidate.length!==expected.length||!crypto.timingSafeEqual(candidate,expected))return res.status(401).json({ok:false,error:'Invalid credentials'});issue(res,user);res.json({ok:true,user:safeUser(user)})}catch(error){console.error('[Auth] login:',error);res.status(500).json({ok:false,error:'Login failed'})}});
