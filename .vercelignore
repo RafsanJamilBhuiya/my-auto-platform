@@ -1,7 +1,0 @@
-server.js
-core/
-plugins/
-node_modules/
-.git/
-.env.local
-.env.*.local
