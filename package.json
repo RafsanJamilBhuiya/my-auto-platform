@@ -1,6 +1,6 @@
 {
   "name": "my-auto-platform",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Render-native Node.js DevOps and platform management dashboard.",
   "main": "server.js",
@@ -11,6 +11,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
   }
 }
