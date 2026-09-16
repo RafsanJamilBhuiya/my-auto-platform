@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="DevOps Dashboard - Multi-Platform Infrastructure Monitoring">
+    <meta name="theme-color" content="#1f2937">
+    <title>DevOps Dashboard - my-auto-platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --color-primary: #3b82f6;
+            --color-primary-dark: #1e40af;
+            --color-success: #10b981;
+            --color-warning: #f59e0b;
+            --color-error: #ef4444;
+            --color-info: #06b6d4;
+            --bg-dark: #0f172a;
+            --bg-darker: #020617;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --border-color: #334155;
+            --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            background: linear-gradient(135deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Header Section */
+        header {
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(30, 41, 59, 0.8) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 32px 24px;
+            margin-bottom: 32px;
+            box-shadow: var(--shadow-sm);
+            backdrop-filter: blur(10px);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .header-left h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-info) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .header-left p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--color-primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--color-primary);
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.healthy {
+            background: var(--color-success);
+        }
+
+        .status-dot.warning {
+            background: var(--color-warning);
+        }
+
+        .status-dot.error {
+            background: var(--color-error);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Status Grid */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .status-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition);
+            backdrop-filter: blur(10px);
+        }
+
+        .status-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--color-primary);
+            box-shadow: var(--shadow);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .platform-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .platform-icon.github {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .platform-icon.render {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--color-success);
+        }
+
+        .platform-icon.vercel {
+            background: rgba(59, 130, 245, 0.2);
+            color: var(--color-primary);
+        }
+
+        .badge-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--color-success);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--color-warning);
+        }
+
+        .badge-error {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--color-error);
+        }
+
+        .badge-info {
+            background: rgba(59, 130, 245, 0.2);
+            color: var(--color-primary);
+        }
+
+        .card-content {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .info-value {
+            color: var(--text-primary);
+            font-size: 14px;
+            font-weight: 500;
+            word-break: break-word;
+            text-align: right;
+            flex: 1;
+            margin-left: 12px;
+        }
+
+        .domain-link {
+            color: var(--color-primary);
+            text-decoration: none;
+            font-weight: 600;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .domain-link:hover {
+            color: var(--color-info);
+            text-decoration: underline;
+        }
+
+        .external-icon {
+            font-size: 12px;
+        }
+
+        /* Table View (Desktop) */
+        .table-wrapper {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 32px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: rgba(51, 65, 85, 0.5);
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        th {
+            padding: 16px 20px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        td {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 14px;
+        }
+
+        tbody tr {
+            transition: var(--transition);
+        }
+
+        tbody tr:hover {
+            background: rgba(51, 65, 85, 0.3);
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .loading-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(59, 130, 245, 0.2);
+            border-top-color: var(--color-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-state {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            color: var(--color-error);
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        /* Footer & Metadata */
+        footer {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 12px;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .refresh-info {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 12px;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .table-wrapper {
+                overflow-x: auto;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th, td {
+                padding: 12px 12px;
+            }
+
+            .header-left h1 {
+                font-size: 24px;
+            }
+
+            .info-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .info-value {
+                text-align: left;
+                margin-left: 0;
+                margin-top: 4px;
+            }
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .status-card {
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .status-card:nth-child(2) {
+            animation-delay: 0.1s;
+        }
+
+        .status-card:nth-child(3) {
+            animation-delay: 0.2s;
+        }
+
+        /* Accessibility */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg-dark: #f8fafc;
+                --bg-darker: #f1f5f9;
+                --bg-card: #ffffff;
+                --bg-card-hover: #f1f5f9;
+                --text-primary: #0f172a;
+                --text-secondary: #475569;
+                --border-color: #e2e8f0;
+            }
+
+            header {
+                border-color: #e2e8f0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header Section -->
+        <header>
+            <div class="header-content">
+                <div class="header-left">
+                    <h1>🚀 DevOps Dashboard</h1>
+                    <p>Multi-Platform Infrastructure Monitoring</p>
+                </div>
+                <div class="header-actions">
+                    <span class="status-indicator">
+                        <span class="status-dot healthy"></span>
+                        <span id="overall-status">Checking...</span>
+                    </span>
+                    <button class="btn btn-primary" onclick="refreshStatus()" aria-label="Refresh status">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Error Alert -->
+        <div id="error-alert" style="display: none;" class="error-state" role="alert">
+            <strong>Error:</strong> <span id="error-message"></span>
+        </div>
+
+        <!-- Status Cards View -->
+        <div class="status-grid" id="status-grid">
+            <!-- Cards will be populated by JavaScript -->
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <span>Loading deployment status...</span>
+            </div>
+        </div>
+
+        <!-- Table View -->
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Platform</th>
+                        <th>Project</th>
+                        <th>Environment</th>
+                        <th>Domain</th>
+                        <th>Status</th>
+                        <th>Last Sync</th>
+                    </tr>
+                </thead>
+                <tbody id="status-table">
+                    <tr>
+                        <td colspan="6" class="loading-state">
+                            <div class="spinner"></div>
+                            <span>Loading deployment data...</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer -->
+        <footer>
+            <p>DevOps Dashboard • my-auto-platform Infrastructure</p>
+            <div class="refresh-info">
+                Auto-refresh every 30 seconds | Last updated: <span id="last-updated">--:--:--</span>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        const API_ENDPOINT = '/api/devops/status';
+        const REFRESH_INTERVAL = 30000; // 30 seconds
+        let lastUpdateTime = null;
+
+        /**
+         * Fetches DevOps status from backend API
+         */
+        async function fetchStatus() {
+            try {
+                const response = await fetch(API_ENDPOINT);
+                if (!response.ok) {
+                    throw new Error(`API responded with status ${response.status}`);
+                }
+                const data = await response.json();
+                updateUI(data);
+                clearError();
+            } catch (error) {
+                showError(`Failed to fetch deployment status: ${error.message}`);
+                console.error('Status fetch error:', error);
+            }
+        }
+
+        /**
+         * Updates UI with fetched status data
+         */
+        function updateUI(data) {
+            updateCards(data);
+            updateTable(data);
+            updateOverallStatus(data);
+            updateTimestamp();
+        }
+
+        /**
+         * Updates status cards
+         */
+        function updateCards(data) {
+            const grid = document.getElementById('status-grid');
+            grid.innerHTML = '';
+
+            const platforms = [
+                { key: 'github', icon: '🐙', title: 'GitHub' },
+                { key: 'render', icon: '🚀', title: 'Render Backend' },
+                { key: 'vercel', icon: '▲', title: 'Vercel Frontend' }
+            ];
+
+            platforms.forEach((platform, index) => {
+                const status = data[platform.key];
+                if (!status) return;
+
+                const card = createStatusCard(platform, status);
+                card.style.animationDelay = `${index * 0.1}s`;
+                grid.appendChild(card);
+            });
+        }
+
+        /**
+         * Creates a status card element
+         */
+        function createStatusCard(platform, status) {
+            const card = document.createElement('div');
+            card.className = 'status-card';
+
+            const statusBadge = createStatusBadge(status.buildStatus);
+            const platformIcon = createPlatformIcon(platform.key);
+
+            card.innerHTML = `
+                <div class="card-header">
+                    <div class="card-title">
+                        ${platformIcon}
+                        <span>${platform.title}</span>
+                    </div>
+                    ${statusBadge}
+                </div>
+                <div class="card-content">
+                    <div class="info-row">
+                        <span class="info-label">Project</span>
+                        <span class="info-value">${escapeHtml(status.projectName)}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Environment</span>
+                        <span class="info-value">${status.environment || 'Production'}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Domain</span>
+                        <span class="info-value">
+                            <a href="${status.domain}" target="_blank" rel="noopener noreferrer" class="domain-link">
+                                ${escapeHtml(status.domain)}
+                                <span class="external-icon">↗</span>
+                            </a>
+                        </span>
+                    </div>
+                    ${status.branch ? `
+                    <div class="info-row">
+                        <span class="info-label">Branch</span>
+                        <span class="info-value">${escapeHtml(status.branch)}</span>
+                    </div>
+                    ` : ''}
+                    ${status.lastCommitSha ? `
+                    <div class="info-row">
+                        <span class="info-label">Last Commit</span>
+                        <span class="info-value" title="${status.lastCommitSha}">
+                            ${status.lastCommitSha.substring(0, 7)}
+                        </span>
+                    </div>
+                    ` : ''}
+                    <div class="info-row">
+                        <span class="info-label">Last Sync</span>
+                        <span class="info-value">${formatTime(status.lastSyncTimestamp)}</span>
+                    </div>
+                </div>
+            `;
+
+            return card;
+        }
+
+        /**
+         * Creates a platform icon element
+         */
+        function createPlatformIcon(platform) {
+            const icon = document.createElement('div');
+            icon.className = `platform-icon ${platform}`;
+            icon.textContent = platform === 'github' ? '🐙' : platform === 'render' ? '🚀' : '▲';
+            return icon;
+        }
+
+        /**
+         * Creates a status badge element
+         */
+        function createStatusBadge(status) {
+            const badge = document.createElement('span');
+            const statusMap = {
+                'success': { class: 'badge-success', text: '✓ Ready' },
+                'warning': { class: 'badge-warning', text: '⚠ Pending' },
+                'error': { class: 'badge-error', text: '✗ Error' },
+                'unknown': { class: 'badge-info', text: '? Unknown' }
+            };
+
+            const statusInfo = statusMap[status] || statusMap['unknown'];
+            badge.className = `badge-status ${statusInfo.class}`;
+            badge.textContent = statusInfo.text;
+            return badge;
+        }
+
+        /**
+         * Updates status table
+         */
+        function updateTable(data) {
+            const tbody = document.getElementById('status-table');
+            tbody.innerHTML = '';
+
+            const rows = [
+                { platform: 'GitHub', ...data.github },
+                { platform: 'Render', ...data.render },
+                { platform: 'Vercel', ...data.vercel }
+            ];
+
+            rows.forEach(row => {
+                const tr = document.createElement('tr');
+                const statusBadge = createStatusBadge(row.buildStatus);
+
+                tr.innerHTML = `
+                    <td><strong>${escapeHtml(row.platform)}</strong></td>
+                    <td>${escapeHtml(row.projectName)}</td>
+                    <td>${row.environment || 'Production'}</td>
+                    <td>
+                        <a href="${row.domain}" target="_blank" rel="noopener noreferrer" class="domain-link">
+                            ${escapeHtml(new URL(row.domain).hostname)}
+                        </a>
+                    </td>
+                    <td>${statusBadge.outerHTML}</td>
+                    <td>${formatTime(row.lastSyncTimestamp)}</td>
+                `;
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        /**
+         * Updates overall status indicator
+         */
+        function updateOverallStatus(data) {
+            const statusIndicator = document.querySelector('#overall-status');
+            const statusDot = document.querySelector('.status-dot');
+
+            const statuses = [data.github?.buildStatus, data.render?.buildStatus, data.vercel?.buildStatus];
+            let overallStatus = 'healthy';
+
+            if (statuses.some(s => s === 'error')) {
+                overallStatus = 'error';
+            } else if (statuses.some(s => s === 'warning')) {
+                overallStatus = 'warning';
+            }
+
+            statusDot.className = `status-dot ${overallStatus}`;
+            statusIndicator.textContent = overallStatus.charAt(0).toUpperCase() + overallStatus.slice(1);
+        }
+
+        /**
+         * Shows error message
+         */
+        function showError(message) {
+            const errorAlert = document.getElementById('error-alert');
+            const errorMessage = document.getElementById('error-message');
+            errorMessage.textContent = message;
+            errorAlert.style.display = 'block';
+        }
+
+        /**
+         * Clears error message
+         */
+        function clearError() {
+            document.getElementById('error-alert').style.display = 'none';
+        }
+
+        /**
+         * Updates last updated timestamp
+         */
+        function updateTimestamp() {
+            const now = new Date();
+            document.getElementById('last-updated').textContent = now.toLocaleTimeString();
+        }
+
+        /**
+         * Formats relative time
+         */
+        function formatTime(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+
+            if (diff < 60000) return 'Now';
+            if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+            if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+            return date.toLocaleDateString();
+        }
+
+        /**
+         * Escapes HTML to prevent XSS
+         */
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        /**
+         * Refreshes status manually
+         */
+        function refreshStatus() {
+            fetchStatus();
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchStatus();
+            setInterval(fetchStatus, REFRESH_INTERVAL);
+        });
+
+        // Refresh when tab comes into focus
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                fetchStatus();
+            }
+        });
+    </script>
+</body>
+</html>
