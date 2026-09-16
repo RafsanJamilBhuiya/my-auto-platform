@@ -4,11 +4,38 @@ const crypto = require('crypto');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'platform.json');
+const DEFAULT_ADMIN_EMAIL = 'rafsanjamilbhuiya@gmail.com';
 const initialState = () => ({ version: 1, users: [], integrations: [] });
 let memoryState = null;
 let fileAvailable = true;
+let generatedAdminPassword = null;
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  return { salt, password_hash: crypto.scryptSync(password, salt, 64).toString('hex') };
+}
+function seedDefaultAdmin(state) {
+  if (state.users.length > 0) return false;
+
+  const email = String(process.env.ADMIN_DEFAULT_EMAIL || DEFAULT_ADMIN_EMAIL).trim().toLowerCase();
+  let password = process.env.ADMIN_DEFAULT_PASSWORD;
+  if (!password) {
+    password = crypto.randomBytes(24).toString('base64url');
+    generatedAdminPassword = password;
+    console.warn('[Store] ADMIN_DEFAULT_PASSWORD is not configured. A one-time random admin password was generated for this fresh data store; retrieve it from startup logs and set ADMIN_DEFAULT_PASSWORD in Render for a stable login.');
+  }
+  if (password.length < 10) throw new Error('ADMIN_DEFAULT_PASSWORD must be at least 10 characters');
+
+  state.users.push({
+    id: crypto.randomUUID(),
+    email,
+    name: email.split('@')[0],
+    role: 'admin',
+    provider: 'local',
+    ...hashPassword(password)
+  });
+  return true;
+}
 function normalizeState(value) {
   if (!value || typeof value !== 'object') return initialState();
   return {
@@ -29,15 +56,18 @@ function ensureLoaded() {
     memoryState = initialState();
     fileAvailable = false;
   }
+  if (seedDefaultAdmin(memoryState)) persist();
   return memoryState;
 }
 function persist() {
-  const state = ensureLoaded();
+  const state = memoryState || initialState();
   if (!fileAvailable) return;
   try {
-    const temp = `${DATA_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(temp, JSON.stringify(state, null, 2), { mode: 0o600 });
-    fs.renameSync(temp, DATA_FILE);
+    fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
+    if (generatedAdminPassword) {
+      console.warn(`[Store] Generated default admin password for ${DEFAULT_ADMIN_EMAIL}: ${generatedAdminPassword}`);
+      generatedAdminPassword = null;
+    }
   } catch (error) {
     fileAvailable = false;
     console.warn('[Store] JSON persistence failed; continuing in memory:', error.message);
