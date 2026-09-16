@@ -3,6 +3,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const { authRequired, adminRequired } = require('./middleware/auth');
 const app = express();
 const PORT = process.env.PORT || 10000;
 const HOST = '0.0.0.0';
@@ -25,6 +26,9 @@ app.use('/api/backup', require('./routes/backup'));
 app.use('/api/integrations', require('./routes/integrations'));
 app.use('/api/plugins', require('./routes/plugins'));
 app.use('/api/devops', require('./routes/devops-api'));
+
+// Compatibility alias: preserve the requested admin backup endpoint while reusing the canonical export handler.
+app.get('/api/admin/backup', authRequired, adminRequired, (req, res) => res.redirect(302, '/api/backup/export'));
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
