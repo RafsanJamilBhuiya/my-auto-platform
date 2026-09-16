@@ -4,7 +4,11 @@
   "private": true,
   "description": "Render-native Node.js DevOps and platform management dashboard.",
   "main": "server.js",
-  "scripts": {"start":"node server.js","dev":"node --watch server.js"},
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "verify": "node scripts/verify.js"
+  },
   "engines": {"node": ">=20.0.0"},
   "dependencies": {
     "bcryptjs": "^3.0.2",
