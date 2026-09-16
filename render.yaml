@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: my-auto-platform
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
