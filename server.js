@@ -15,8 +15,7 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
-// Core modules load without swallowing application route failures.
-require('./core/database');
+// Native Render runtime: no external database or storage service is required.
 require('./core/eventBus');
 require('./core/loader');
 
@@ -34,9 +33,9 @@ app.get('/register', (req, res) => res.sendFile(path.join(__dirname, 'public', '
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/integrations', (req, res) => res.sendFile(path.join(__dirname, 'public', 'integrations.html')));
 
-app.get('/health', (req, res) => res.status(200).json({ ok: true, service: 'my-auto-platform', deployment: 'Render Native', timestamp: new Date().toISOString() }));
-app.get('/ready', (req, res) => res.status(200).json({ ok: true, ready: true, persistentStoreConfigured: require('./core/store').isConfigured(), timestamp: new Date().toISOString() }));
-app.get('/status', (req, res) => res.json({ ok: true, service: 'my-auto-platform', architecture: 'GitHub → Render', environment: process.env.NODE_ENV || 'production' }));
+app.get('/health', (req, res) => res.status(200).json({ ok: true, service: 'my-auto-platform', deployment: 'Render Native', storage: 'native-json-memory', timestamp: new Date().toISOString() }));
+app.get('/ready', (req, res) => res.status(200).json({ ok: true, ready: true, storage: 'native-json-memory', timestamp: new Date().toISOString() }));
+app.get('/status', (req, res) => res.status(200).json({ ok: true, service: 'my-auto-platform', architecture: 'GitHub → Render', environment: process.env.NODE_ENV || 'production' }));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ ok: false, error: 'API route not found' });
@@ -46,7 +45,8 @@ app.use((req, res) => {
 function startServer() {
   const server = app.listen(PORT, HOST, () => console.log(`[Server] Render Native | ${HOST}:${PORT}`));
   const shutdown = signal => { console.log(`[Server] ${signal} received`); server.close(() => process.exit(0)); setTimeout(() => process.exit(1), 10000).unref(); };
-  process.once('SIGTERM', () => shutdown('SIGTERM')); process.once('SIGINT', () => shutdown('SIGINT'));
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
   return server;
 }
 if (require.main === module) startServer();
