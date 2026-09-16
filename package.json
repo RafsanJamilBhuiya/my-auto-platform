@@ -1,18 +1,14 @@
 {
   "name": "my-auto-platform",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Enterprise-grade Node.js backend with a modular, plugin-based architecture.",
+  "description": "Render-native Node.js DevOps and platform management dashboard.",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
-  },
-  "engines": {
-    "node": ">=20.0.0"
-  },
+  "scripts": {"start":"node server.js","dev":"node --watch server.js"},
+  "engines": {"node": ">=20.0.0"},
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2"
