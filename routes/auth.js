@@ -17,7 +17,7 @@ function issue(res, user) {
   res.cookie('auth_token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 86400000, path: '/' });
 }
 function clearOAuthCookies(res) {
-  const opts = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' };
+  const opts = { httpOnly: true, secure: true, sameSite: 'lax', path: '/api/auth/google' };
   res.clearCookie(OAUTH_COOKIE, opts); res.clearCookie(PKCE_COOKIE, opts);
 }
 function pkceChallenge(verifier) { return crypto.createHash('sha256').update(verifier).digest('base64url'); }
@@ -34,7 +34,7 @@ router.post('/register', express.json(), async (req, res) => {
     const created = await store.createUser(user);
     issue(res, created);
     res.status(201).json({ ok:true, user:safeUser(created) });
-  } catch (error) { console.error('[Auth] register:', error); res.status(503).json({ ok:false, error:'Persistent authentication storage is unavailable' }); }
+  } catch (error) { console.error('[Auth] register:', error); res.status(500).json({ ok:false, error:'Registration failed' }); }
 });
 
 router.post('/login', express.json(), async (req, res) => {
@@ -48,7 +48,7 @@ router.post('/login', express.json(), async (req, res) => {
     if (candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) return res.status(401).json({ ok:false, error:'Invalid credentials' });
     issue(res, user);
     res.json({ ok:true, user:safeUser(user) });
-  } catch (error) { console.error('[Auth] login:', error); res.status(503).json({ ok:false, error:'Persistent authentication storage is unavailable' }); }
+  } catch (error) { console.error('[Auth] login:', error); res.status(500).json({ ok:false, error:'Login failed' }); }
 });
 
 router.post('/logout', (req, res) => {
@@ -59,7 +59,7 @@ router.post('/logout', (req, res) => {
 router.get('/google', (req, res) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const redirect = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
-  if (!clientId || !process.env.GOOGLE_CLIENT_SECRET) return res.status(503).json({ ok:false, error:'Google OAuth is not configured on Render.' });
+  if (!clientId || !process.env.GOOGLE_CLIENT_SECRET) return res.status(404).json({ ok:false, error:'Google OAuth is not enabled.' });
   const state = crypto.randomBytes(32).toString('base64url');
   const verifier = crypto.randomBytes(48).toString('base64url');
   const opts = { httpOnly:true, secure:true, sameSite:'lax', maxAge:600000, path:'/api/auth/google' };
@@ -69,11 +69,12 @@ router.get('/google', (req, res) => {
 });
 
 router.get('/google/callback', async (req, res) => {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return res.status(503).send('Google OAuth is not configured.');
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return res.status(404).send('Google OAuth is not enabled.');
   if (!req.query.code || !req.query.state) return res.status(400).send('Missing OAuth response.');
   const stateCookie = req.cookies?.[OAUTH_COOKIE];
   const verifier = req.cookies?.[PKCE_COOKIE];
-  if (!stateCookie || !verifier || stateCookie.length !== String(req.query.state).length || !crypto.timingSafeEqual(Buffer.from(stateCookie), Buffer.from(String(req.query.state)))) return res.status(400).send('Invalid OAuth state.');
+  const receivedState = String(req.query.state);
+  if (!stateCookie || !verifier || stateCookie.length !== receivedState.length || !crypto.timingSafeEqual(Buffer.from(stateCookie), Buffer.from(receivedState))) return res.status(400).send('Invalid OAuth state.');
   try {
     const redirect = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', { method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({ code:req.query.code, client_id:process.env.GOOGLE_CLIENT_ID, client_secret:process.env.GOOGLE_CLIENT_SECRET, redirect_uri:redirect, grant_type:'authorization_code', code_verifier:verifier }) });
