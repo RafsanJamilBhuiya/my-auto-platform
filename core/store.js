@@ -8,7 +8,6 @@ const DEFAULT_ADMIN_EMAIL = 'rafsanjamilbhuiya@gmail.com';
 const initialState = () => ({ version: 1, users: [], integrations: [] });
 let memoryState = null;
 let fileAvailable = true;
-let generatedAdminPassword = null;
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -21,8 +20,8 @@ function seedDefaultAdmin(state) {
   let password = process.env.ADMIN_DEFAULT_PASSWORD;
   if (!password) {
     password = crypto.randomBytes(24).toString('base64url');
-    generatedAdminPassword = password;
-    console.warn('[Store] ADMIN_DEFAULT_PASSWORD is not configured. A one-time random admin password was generated for this fresh data store; retrieve it from startup logs and set ADMIN_DEFAULT_PASSWORD in Render for a stable login.');
+    console.warn('[Store] ADMIN_DEFAULT_PASSWORD is not configured. A one-time random admin password was generated for this fresh data store. Set ADMIN_DEFAULT_PASSWORD in Render for a stable login.');
+    console.warn(`[Store] Generated default admin password for ${email}: ${password}`);
   }
   if (password.length < 10) throw new Error('ADMIN_DEFAULT_PASSWORD must be at least 10 characters');
 
@@ -63,11 +62,9 @@ function persist() {
   const state = memoryState || initialState();
   if (!fileAvailable) return;
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
-    if (generatedAdminPassword) {
-      console.warn(`[Store] Generated default admin password for ${DEFAULT_ADMIN_EMAIL}: ${generatedAdminPassword}`);
-      generatedAdminPassword = null;
-    }
+    const temp = `${DATA_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(temp, JSON.stringify(state, null, 2), { mode: 0o600 });
+    fs.renameSync(temp, DATA_FILE);
   } catch (error) {
     fileAvailable = false;
     console.warn('[Store] JSON persistence failed; continuing in memory:', error.message);
